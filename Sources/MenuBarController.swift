@@ -40,10 +40,10 @@ final class MenuBarController {
         let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         status.button?.imagePosition = .imageOnly
         status.button?.target = self
-        // 左右键都发给同一个 action，在 action 里区分
-        status.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        // 只在右键时发 action：左键点图标不做任何事，想开主界面必须走右键菜单
+        status.button?.sendAction(on: [.rightMouseUp])
         status.button?.action = #selector(statusItemClicked)
-        status.button?.toolTip = "D-helper"
+        status.button?.toolTip = "D-helper（右键打开菜单）"
         item = status
 
         refresh()
@@ -66,15 +66,11 @@ final class MenuBarController {
         button.image = renderImage()
     }
 
-    /// 左键打开主界面；右键弹菜单。
+    /// 左键不再有动作；只有右键弹菜单，主界面从菜单里的「打开主界面」进。
     /// 应用现在是 Accessory（LSUIElement），程序坞没有图标、也没有主菜单栏，
     /// 所以「退出」只能放在这里，否则就没有入口了。
     @objc private func statusItemClicked() {
-        if NSApp.currentEvent?.type == .rightMouseUp {
-            showContextMenu()
-        } else {
-            openMainWindow()
-        }
+        showContextMenu()
     }
 
     @objc private func openMainWindow() {
