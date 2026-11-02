@@ -34,22 +34,29 @@ final class MenuBarController {
 
     private init() {}
 
+    /// 登录自启时，晚这么久再建状态项（见 start() 里的说明）
+    private let loginInsertDelay: TimeInterval = 5
+    private var started = false
+
     func start() {
-        guard item == nil else { return }
+        guard !started else { return }
+        started = true
 
-        let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        status.button?.imagePosition = .imageOnly
-        status.button?.target = self
-        // 只在右键时发 action：左键点图标不做任何事，想开主界面必须走右键菜单
-        status.button?.sendAction(on: [.rightMouseUp])
-        status.button?.action = #selector(statusItemClicked)
-        status.button?.toolTip = "D-helper（右键打开菜单）"
-        item = status
-
-        refresh()
+        // 状态项的位置只由"创建顺序"决定：新建的总插在最左边，后来者把先来的往右挤。
+        // 开机时我们起得早，之后 ChatGPT / BetterDisplay 这些登录项陆续起来，
+        // 就一路把我们挤到右边去。所以登录这条路径上等它们上齐了再建，
+        // 这样我们才是最左边那个。手动启动没有这个顾虑，立刻建。
+        if LaunchAtLogin.isAutostartLaunch {
+            DispatchQueue.main.asyncAfter(deadline: .now() + loginInsertDelay) { [weak self] in
+                self?.createStatusItem()
+            }
+        } else {
+            createStatusItem()
+        }
 
         // 读数每轮采样都会变；勾选/顺序也会变。两者都触发重画。
         // objectWillChange 在值写入之前发出，所以延后一拍再取新值。
+        // 订阅先挂上没关系：状态项还没建时 refresh() 会自己跳过。
         FanStore.shared.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.refresh() } }
@@ -61,12 +68,30 @@ final class MenuBarController {
             .store(in: &cancellables)
     }
 
+    private func createStatusItem() {
+        guard item == nil else { return }
+
+        let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // 有了 autosaveName，按住 ⌘ 拖动图标调整的位置才会被系统记住（下次启动还原）
+        status.autosaveName = "dev.dhelper.status"
+        status.button?.imagePosition = .imageOnly
+        status.button?.target = self
+        // 左键和右键都弹同一个菜单：只注册右键时左键点图标毫无反应，
+        // 用户第一反应就是"点坏了"。这里两个键都发 action。
+        status.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        status.button?.action = #selector(statusItemClicked)
+        status.button?.toolTip = "D-helper"
+        item = status
+
+        refresh()
+    }
+
     func refresh() {
         guard let button = item?.button else { return }
         button.image = renderImage()
     }
 
-    /// 左键不再有动作；只有右键弹菜单，主界面从菜单里的「打开主界面」进。
+    /// 左键 / 右键行为一致，都弹菜单，主界面从菜单里的「打开主界面」进。
     /// 应用现在是 Accessory（LSUIElement），程序坞没有图标、也没有主菜单栏，
     /// 所以「退出」只能放在这里，否则就没有入口了。
     @objc private func statusItemClicked() {
@@ -74,17 +99,12 @@ final class MenuBarController {
     }
 
     @objc private func openMainWindow() {
-        NSApp.activate(ignoringOtherApps: true)
-        if let main = NSApp.windows.first(where: { $0.frame.width > 300 && $0.parent == nil }) {
-            main.makeKeyAndOrderFront(nil)
-        }
+        MainWindow.show()
     }
 
     @objc private func openSettings() {
-        NSApp.activate(ignoringOtherApps: true)
-        let host = NSApp.windows.first { $0.frame.width > 300 && $0.parent == nil }
-        host?.makeKeyAndOrderFront(nil)
-        SettingsPanel.show(relativeTo: host)
+        MainWindow.show()
+        SettingsPanel.show(relativeTo: MainWindow.existing)
     }
 
     @objc private func quit() {

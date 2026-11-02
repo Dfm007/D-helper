@@ -10,13 +10,15 @@ struct DHelperApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        WindowGroup("D-helper") {
-            ModeBarView()
-        }
-        .windowResizability(.contentSize)
-        .commands {
-            CommandGroup(replacing: .newItem) {}
-        }
+        // 主窗口由 MainWindow 自己建（见 MainWindow.swift），这里只留一个不出窗口的
+        // Settings 场景占位：SwiftUI 的 App 至少要有一个 Scene，而 WindowGroup
+        // 会在启动时立刻弹窗 —— 那正是开机自启「一闪而过」的来源。
+        // 顺便把系统自带的「设置…」菜单项去掉，那个空窗口没有任何用处。
+        Settings { EmptyView() }
+            .commands {
+                CommandGroup(replacing: .appSettings) {}
+                CommandGroup(replacing: .newItem) {}
+            }
     }
 }
 
@@ -25,40 +27,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 换过安装位置时，把开机自启指向新路径（否则登录时静默失败）
         LaunchAtLogin.repairIfMoved()
 
-        // 菜单栏常驻项：即使主窗口被藏起来（开机自启），这里也始终有入口
+        // 采样必须在这里启动：开机自启不再建窗口，菜单栏读数不能指望
+        // ModeBarView.onAppear 来拉起采样循环。
+        FanStore.shared.start()
+
+        // 菜单栏常驻项：主窗口开不开，这里都是唯一入口
         MainActor.assumeIsolated { MenuBarController.shared.start() }
 
-        // 由开机自启拉起：不弹窗口，只驻留。点程序坞图标再打开界面。
-        // 窗口是 SwiftUI 建的，出现时机不确定，所以收两次兜一下，避免登录时闪一下。
-        if LaunchAtLogin.isAutostartLaunch {
-            for delay in [0.15, 0.8] {
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                    for w in NSApp.windows where w.frame.width > 300 {
-                        w.orderOut(nil)
-                    }
-                }
-            }
-        }
+        // 由开机自启拉起：到此为止，不建窗口。
+        // 以前是先让 WindowGroup 建好窗口再 orderOut，中间已经渲染过一帧，
+        // 于是每次开机都能看到主界面闪一下。
+        guard !LaunchAtLogin.isAutostartLaunch else { return }
+
+        MainActor.assumeIsolated { MainWindow.show() }
     }
 
-    /// 点程序坞图标时把主窗口叫回来。
+    /// 点程序坞图标 / 在访达里双击（此时窗口多半是关掉的）时把主窗口叫回来。
     ///
     /// 注意返回值：`true` 表示"交给 AppKit 按默认方式处理"，而默认行为是
-    /// 「看不到可见窗口就新建一个」—— 开机自启把窗口 orderOut 之后正好命中这条，
-    /// 结果就是我这边调出了旧窗口、AppKit 又建了一个新的，变成两个窗口。
+    /// 「看不到可见窗口就新建一个」—— 我们自己的窗口对象还在，走默认就会多出一个。
     /// 所以自己处理完必须返回 `false`。
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if flag { return true }
-
-        // 只认主窗口：设置窗是挂在主窗口下的无边框子窗口，parent 不为 nil
-        if let main = sender.windows.first(where: { w in
-            w.frame.width > 300 && w.parent == nil && !w.isVisible
-        }) {
-            main.makeKeyAndOrderFront(nil)
-            return false
-        }
-        // 真的没有主窗口（用户点红灯关掉了），交给系统新建
-        return true
+        MainActor.assumeIsolated { MainWindow.show() }
+        return false
     }
 
     /// 设置窗是无边框子窗口；默认退出流程会先去关窗口，可能被它牵制。
