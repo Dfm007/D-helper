@@ -234,7 +234,7 @@ struct MenuBarSettingsView: View {
                 top = menuText(metric)
             case .cpuFan, .gpuFan:
                 if let rpm = menuText(metric), let value = Int(rpm) {
-                    bottom = MenuBarController.compactRPM(value)
+                    bottom = MenuBarController.fanRPMText(value)
                 } else {
                     bottom = menuText(metric)
                 }

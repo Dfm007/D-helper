@@ -224,7 +224,7 @@ final class MenuBarController {
                         if m == .cpuTemp || m == .gpuTemp {
                             topText = m.menuBarText(store)
                         } else if let rpm = m.menuBarText(store), let value = Int(rpm) {
-                            bottomText = Self.compactRPM(value)
+                            bottomText = Self.fanRPMText(value)
                         } else {
                             bottomText = m.menuBarText(store)
                         }
@@ -247,9 +247,9 @@ final class MenuBarController {
         return result
     }
 
-    /// 4200 → 4.2k
-    static func compactRPM(_ rpm: Int) -> String {
-        rpm >= 1000 ? String(format: "%.1fk", Double(rpm) / 1000) : "\(rpm)"
+    /// 合并显示里转速那一行：4200 → "4200R"（原来是缩写 "4.2k"，用户嫌读不出原值）
+    static func fanRPMText(_ rpm: Int) -> String {
+        "\(rpm)R"
     }
 
     private func fallbackImage() -> NSImage {
